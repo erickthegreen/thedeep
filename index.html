@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TheDeep</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="crosshair"></div>
+
+    <div id="ui">
+        <div>💀 Mortes: <span id="kills">0</span></div>
+        <div>💰 Ouro: <span id="gold">0</span></div>
+        <div>🔫 Arma: <span id="weaponName">Pistola de Arpão</span></div>
+        <div>🌊 Onda: <span id="wave">1</span></div>
+        <div class="instructions-ingame">Pressione [E] para abrir a Loja</div>
+    </div>
+
+    <div id="gameOver">
+        <h1>GAME OVER</h1>
+        <p>Você sobreviveu até a onda <span id="finalWave">1</span> com <span id="finalKills">0</span> mortes.</p>
+        <button id="restartButton">Jogar Novamente</button>
+    </div>
+
+    <div id="instructions-general">
+        W/A/S/D = Mover | Mouse = Olhar | Clique = Atirar | E = Loja
+    </div>
+
+    <div id="shop">
+        <h2>🏪 LOJA DE ARMAS SUBMARINAS 🏪</h2>
+        <div id="shopGold">
+            💰 Seu Ouro: <span id="shopGoldAmount">0</span>
+        </div>
+        <div class="weapon-grid" id="weaponGrid"></div>
+        <button id="closeShop">Fechar Loja [E]</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script src="script.js"></script>
+</body>
+</html>

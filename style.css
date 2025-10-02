@@ -1,0 +1,234 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+    background: #000814;
+}
+
+#gameCanvas {
+    display: block;
+}
+
+#ui {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: #00f5ff;
+    text-shadow: 0 0 10px #00f5ff, 2px 2px 4px #000;
+    font-size: 20px;
+    z-index: 10;
+}
+
+.instructions-ingame {
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+#gameOver {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #ff3333;
+    text-align: center;
+    z-index: 20;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 40px;
+    border-radius: 10px;
+    border: 2px solid #ff3333;
+    text-shadow: 0 0 15px #ff0000;
+}
+
+#gameOver h1 {
+    font-size: 72px;
+    margin-bottom: 20px;
+}
+
+#gameOver p {
+    font-size: 24px;
+    color: #cccccc;
+    margin-bottom: 30px;
+}
+
+#gameOver button {
+    font-size: 24px;
+    padding: 15px 30px;
+    background: #ff3333;
+    color: #000000;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+#instructions-general {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #00f5ff;
+    text-align: center;
+    font-size: 16px;
+    text-shadow: 0 0 5px #00f5ff;
+}
+
+#crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+    z-index: 15;
+}
+
+#crosshair::before,
+#crosshair::after {
+    content: '';
+    position: absolute;
+    background: #00ffff;
+    box-shadow: 0 0 5px #00ffff;
+}
+
+#crosshair::before {
+    width: 2px;
+    height: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#crosshair::after {
+    width: 20px;
+    height: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* --- ESTILOS DA LOJA --- */
+#shop {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 10, 20, 0.95);
+    border: 3px solid #00f5ff;
+    border-radius: 15px;
+    padding: 30px;
+    width: 80%;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow-y: auto;
+    z-index: 30;
+    box-shadow: 0 0 30px #00f5ff;
+}
+
+#shop h2 {
+    color: #00f5ff;
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 32px;
+    text-shadow: 0 0 10px #00f5ff;
+}
+
+#shopGold {
+    text-align: center;
+    color: #ffd700;
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+.weapon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.weapon-card {
+    background: rgba(0, 40, 60, 0.8);
+    border: 2px solid #00a8cc;
+    border-radius: 10px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    flex-direction: column;
+}
+
+.weapon-card:hover {
+    transform: scale(1.05);
+    border-color: #00f5ff;
+    box-shadow: 0 0 15px #00f5ff;
+}
+
+.weapon-card.owned {
+    border-color: #00ff88;
+    background: rgba(0, 60, 40, 0.8);
+}
+
+.weapon-card.equipped {
+    border-color: #ffff00;
+    box-shadow: 0 0 20px #ffff00;
+    background: rgba(60, 60, 0, 0.8);
+}
+
+.weapon-card.locked {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: rgba(40, 0, 0, 0.8);
+    border-color: #880000;
+}
+
+.weapon-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #00f5ff;
+    margin-bottom: 8px;
+}
+
+.weapon-stats {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 5px;
+}
+
+.weapon-cost {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffd700;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.weapon-desc {
+    font-size: 11px;
+    font-style: italic;
+    color: #888;
+    margin-top: 5px;
+}
+
+#closeShop {
+    background: #ff0050;
+    border: none;
+    padding: 12px 30px;
+    font-size: 18px;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    display: block;
+    margin: 20px auto 0;
+    transition: all 0.3s;
+}
+
+#closeShop:hover {
+    background: #ff3366;
+    box-shadow: 0 0 15px #ff0050;
+}
