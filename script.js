@@ -1,5 +1,27 @@
 let scene, camera, renderer, player;
 let enemies = [], projectiles = [];
+let MONSTER_STATS = {
+    "sprites/monster1.png": { health: 20, gold: 15, speed: 0.05 },   // fraco, mas já vale 15g
+    "sprites/monster2.png": { health: 40, gold: 30, speed: 0.06 },   // intermediário
+    "sprites/monster3.png": { health: 80, gold: 60, speed: 0.07 },
+    "sprites/monster4.png": { health: 120, gold: 100, speed: 0.08 }, // começa a valer a pena
+    "sprites/monster5.png": { health: 200, gold: 180, speed: 0.09 },
+    "sprites/monster6.png": { health: 400, gold: 300, speed: 0.1 },
+    "sprites/monster7.png": { health: 800, gold: 600, speed: 0.12 },
+    "sprites/monster8.png": { health: 1500, gold: 1000, speed: 0.14 } // boss/elite
+};
+
+// agora carregamos os stats de um arquivo externo
+async function loadMonsterData() {
+    const response = await fetch("monsters.json");
+    const monsters = await response.json();
+
+    // monta lookup por sprite
+    MONSTER_STATS = {};
+    monsters.forEach(m => {
+        MONSTER_STATS[m.sprite] = m;
+    });
+}
 const SPRITE_POOL = [
   "sprites/monster1.png",
   "sprites/monster2.png",
@@ -10,16 +32,6 @@ const SPRITE_POOL = [
   "sprites/monster7.png",
   "sprites/monster8.png"
 ];
-const MONSTER_STATS = {
-    "sprites/monster1.png": { health: 10, gold: 5, speed: 0.05 },
-    "sprites/monster2.png": { health: 20, gold: 8, speed: 0.06 },
-    "sprites/monster3.png": { health: 35, gold: 15, speed: 0.07 },
-    "sprites/monster4.png": { health: 50, gold: 25, speed: 0.08 },
-    "sprites/monster5.png": { health: 80, gold: 40, speed: 0.09 },
-    "sprites/monster6.png": { health: 120, gold: 60, speed: 0.1 },
-    "sprites/monster7.png": { health: 200, gold: 100, speed: 0.12 },
-    "sprites/monster8.png": { health: 400, gold: 250, speed: 0.14 }
-};
 
 // helper: sorteia um sprite existente
 function pickRandomSprite() {
@@ -50,32 +62,38 @@ let towerTopY = TOWER_HEIGHT;
 let nearLadder = false;                  // se está perto da “escada” da torre
 
 const weapons = [
-    { name: "Pistola de Arpão", cost: 0, damage: 10, fireRate: 500, speed: 0.5, color: 0x00ffff, size: 0.3, description: "Arma inicial básica" },
-    { name: "Lança-Dardos Rápido", cost: 50, damage: 20, fireRate: 300, speed: 0.6, color: 0x00ff00, size: 0.25, description: "Dispara mais rápido" },
-    { name: "Arpão Perfurante", cost: 100, damage: 30, fireRate: 600, speed: 0.7, color: 0xff00ff, size: 0.35, description: "Dano dobrado" },
-    { name: "Rifle Aquático", cost: 200, damage: 40, fireRate: 250, speed: 0.8, color: 0xffff00, size: 0.3, description: "Rápido e poderoso" },
-    { name: "Canhão Sônico", cost: 350, damage: 50, fireRate: 700, speed: 0.6, color: 0x00ffaa, size: 0.4, description: "Ondas sônicas" },
-    { name: "Bolhas Ácidas", cost: 500, damage: 60, fireRate: 400, speed: 0.5, color: 0x88ff00, size: 0.35, description: "Projéteis corrosivos" },
-    { name: "Tridente Elétrico", cost: 700, damage: 70, fireRate: 500, speed: 0.9, color: 0x0088ff, size: 0.3, description: "Descargas elétricas" },
-    { name: "Metralhadora Sub.", cost: 1000, damage: 80, fireRate: 150, speed: 1.0, color: 0xff6600, size: 0.25, description: "Rajadas devastadoras" },
-    { name: "Lançador de Cristais", cost: 1400, damage: 90, fireRate: 600, speed: 0.7, color: 0xff00ff, size: 0.4, description: "Cristais perfurantes" },
-    { name: "Canhão de Plasma", cost: 1900, damage: 100, fireRate: 800, speed: 0.6, color: 0xff0088, size: 0.45, description: "Energia pura" },
-    { name: "Rifle de Precisão", cost: 2500, damage: 7, fireRate: 1000, speed: 1.2, color: 0x00ddff, size: 0.3, description: "Longo alcance mortal" },
-    { name: "Lança-Torpedos Leve", cost: 3200, damage: 8, fireRate: 900, speed: 0.8, color: 0xff3300, size: 0.5, description: "Torpedos explosivos" },
-    { name: "Desintegrador Abissal", cost: 4000, damage: 9, fireRate: 700, speed: 0.9, color: 0x8800ff, size: 0.4, description: "Dissolve matéria" },
-    { name: "Canhão de Gelo", cost: 5000, damage: 10, fireRate: 600, speed: 0.7, color: 0x00ffff, size: 0.45, description: "Congela inimigos" },
-    { name: "Mísseis Teleguiados", cost: 6500, damage: 12, fireRate: 1200, speed: 0.6, color: 0xff9900, size: 0.5, description: "Seguem alvos" },
-    { name: "Canhão de Antimatéria", cost: 8500, damage: 15, fireRate: 1500, speed: 1.0, color: 0xff0000, size: 0.6, description: "Poder supremo" },
-    { name: "Lança-Raios Cósmico", cost: 11000, damage: 18, fireRate: 800, speed: 1.3, color: 0xffffff, size: 0.35, description: "Energia cósmica" },
-    { name: "Aniquilador", cost: 15000, damage: 22, fireRate: 1000, speed: 1.1, color: 0x9900ff, size: 0.7, description: "A loucura encarnada" },
-    { name: "Tridente de Poseidon", cost: 20000, damage: 28, fireRate: 700, speed: 1.4, color: 0x00aaff, size: 0.5, description: "Poder dos deuses" },
-    { name: "LEVIATÃ", cost: 30000, damage: 4000, fireRate: 500, speed: 1.5, color: 0xff00ff, size: 0.8, description: "A arma definitiva" }
+    { name: "Pistola de Arpão", cost: 0, damage: 25, fireRate: 400, speed: 0.6, color: 0x00ffff, size: 0.3, description: "Arma inicial básica" },
+    { name: "Lança-Dardos Rápido", cost: 30, damage: 40, fireRate: 250, speed: 0.8, color: 0x00ff00, size: 0.25, description: "Dispara muito rápido" },
+    { name: "Arpão Perfurante", cost: 80, damage: 70, fireRate: 500, speed: 0.9, color: 0xff00ff, size: 0.35, description: "Ignora parte da defesa inimiga" },
+    { name: "Rifle Aquático", cost: 150, damage: 100, fireRate: 220, speed: 1.0, color: 0xffff00, size: 0.3, description: "Cadência absurda + dano sólido" },
+    { name: "Canhão Sônico", cost: 300, damage: 160, fireRate: 600, speed: 0.9, color: 0x00ffaa, size: 0.4, description: "Ondas de choque letais" },
+    { name: "Bolhas Ácidas", cost: 450, damage: 200, fireRate: 350, speed: 0.8, color: 0x88ff00, size: 0.35, description: "Dissolve monstros rápido" },
+    { name: "Tridente Elétrico", cost: 600, damage: 260, fireRate: 400, speed: 1.2, color: 0x0088ff, size: 0.3, description: "Choques em área" },
+    { name: "Metralhadora Sub.", cost: 900, damage: 300, fireRate: 120, speed: 1.3, color: 0xff6600, size: 0.25, description: "Rajadas insanas" },
+    { name: "Lançador de Cristais", cost: 1200, damage: 400, fireRate: 500, speed: 1.0, color: 0xff00ff, size: 0.4, description: "Perfuração absurda" },
+    { name: "Canhão de Plasma", cost: 1600, damage: 600, fireRate: 700, speed: 1.1, color: 0xff0088, size: 0.45, description: "Explosões devastadoras" },
+    { name: "Rifle de Precisão", cost: 2000, damage: 800, fireRate: 900, speed: 1.6, color: 0x00ddff, size: 0.3, description: "Sniper nuclear" },
+    { name: "Lança-Torpedos Leve", cost: 2800, damage: 1200, fireRate: 750, speed: 1.2, color: 0xff3300, size: 0.5, description: "Explosões brutais" },
+    { name: "Desintegrador Abissal", cost: 3500, damage: 1500, fireRate: 600, speed: 1.3, color: 0x8800ff, size: 0.4, description: "Evapora inimigos" },
+    { name: "Canhão de Gelo", cost: 4500, damage: 2000, fireRate: 550, speed: 1.1, color: 0x00ffff, size: 0.45, description: "Congela e destrói" },
+    { name: "Mísseis Teleguiados", cost: 6000, damage: 2800, fireRate: 1100, speed: 1.0, color: 0xff9900, size: 0.5, description: "Busca inimigos automaticamente" },
+    { name: "Canhão de Antimatéria", cost: 8000, damage: 4000, fireRate: 1300, speed: 1.4, color: 0xff0000, size: 0.6, description: "Apaga monstros da existência" },
+    { name: "Lança-Raios Cósmico", cost: 10000, damage: 6000, fireRate: 700, speed: 1.6, color: 0xffffff, size: 0.35, description: "Laser cósmico OP" },
+    { name: "Aniquilador", cost: 14000, damage: 8000, fireRate: 900, speed: 1.5, color: 0x9900ff, size: 0.7, description: "Fim dos tempos em uma arma" },
+    { name: "Tridente de Poseidon", cost: 18000, damage: 12000, fireRate: 600, speed: 1.7, color: 0x00aaff, size: 0.5, description: "Poder oceânico absurdo" },
+    { name: "LEVIATÃ", cost: 25000, damage: 20000, fireRate: 400, speed: 2.0, color: 0xff00ff, size: 0.8, description: "Literalmente God Mode" }
 ];
 
+
 // ===== INICIALIZAÇÃO E LOOP PRINCIPAL =====
+
 init();
 
-function init() {
+
+async function init() {
+    // 🔹 carrega os stats dos monstros do JSON ANTES de qualquer coisa
+    await loadMonsterData();
+
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#gameCanvas'), antialias: true });
@@ -92,6 +110,7 @@ function init() {
     player.add(camera);
     scene.add(player);
     camera.position.set(0, 0.5, 0);
+
     // === SISTEMA DE ÁUDIO GLOBAL ===
     const listener = new THREE.AudioListener();
     camera.add(listener);
@@ -106,12 +125,12 @@ function init() {
 
     animate();
     createEnvironment();
+    createLighthouse(); 
     createPlayerView();
     createAmbientLife();
     setupEventListeners();
     
     restartGame();
-    
 }
 
 
@@ -174,10 +193,7 @@ function createEnvironment() {
         scene.add(kelp);
     }
 }
-// ===== TORRE 20m + plataforma =====
-// ===== FAROL JOGÁVEL =====
-(function createLighthouse() {
-    // corpo principal do farol
+function createLighthouse() {
     const towerRadius = 4; // mais largo
     const tGeo = new THREE.CylinderGeometry(towerRadius, towerRadius * 1.2, TOWER_HEIGHT, 32, 1, false);
     const tMat = new THREE.MeshStandardMaterial({
@@ -190,11 +206,11 @@ function createEnvironment() {
     tower.position.set(TOWER_POS.x, TOWER_HEIGHT / 2, TOWER_POS.z);
     scene.add(tower);
 
-    // escada em espiral interna
+    // escada espiral
     const points = [];
     const steps = 100;
     for (let i = 0; i < steps; i++) {
-        const angle = i * 0.3; // controla giro
+        const angle = i * 0.3;
         const x = Math.cos(angle) * (towerRadius - 1.2);
         const z = Math.sin(angle) * (towerRadius - 1.2);
         const y = (i / steps) * TOWER_HEIGHT;
@@ -207,13 +223,13 @@ function createEnvironment() {
     stairs.position.copy(TOWER_POS);
     scene.add(stairs);
 
-    // plataforma no topo
+    // topo do farol
     const topGeo = new THREE.CylinderGeometry(towerRadius + 1, towerRadius + 1, 0.5, 32);
     const topMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.8 });
     const top = new THREE.Mesh(topGeo, topMat);
     top.position.set(TOWER_POS.x, TOWER_HEIGHT + 0.25, TOWER_POS.z);
     scene.add(top);
-})();
+}
 
 
 
@@ -442,6 +458,7 @@ function updateProjectiles() {
     }
 }
 
+
 async function spawnWave() {
     if (waveInProgress) return;
 
@@ -460,8 +477,8 @@ async function spawnWave() {
             0,
             player.position.z + Math.sin(angle) * dist
         );
-        enemy.position.add(dir.multiplyScalar(enemy.userData.speed));
 
+        // não mexe em direção aqui, só adiciona o inimigo
         scene.add(enemy);
         enemies.push(enemy);
     }
@@ -520,6 +537,7 @@ function toggleShop() {
     if (!gameActive) return;
     shopOpen = !shopOpen;
     document.getElementById('shop').style.display = shopOpen ? 'block' : 'none';
+
     if (shopOpen) {
         document.exitPointerLock();
         updateShopDisplay();
@@ -587,13 +605,13 @@ function updateGunAppearance() {
     }
 }
 
-// ===== EVENT LISTENERS =====
 function setupEventListeners() {
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
+
     document.addEventListener('mousemove', (event) => {
         if (gameActive && document.pointerLockElement === document.body) {
             player.rotation.y -= event.movementX * 0.002;
@@ -601,43 +619,37 @@ function setupEventListeners() {
             camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
         }
     });
+
+    // 🔹 só este controla a loja
     document.addEventListener('keydown', (e) => {
         keys[e.code] = true;
-        if (e.code === 'KeyE') toggleShop();
+
+        if (e.code === 'KeyE') {
+            toggleShop();
+        }
+
+        if (e.code === 'Space' && Math.abs(player.position.y - GROUND_Y) < 0.001) {
+            vY = JUMP_FORCE;
+        }
+
+        if (e.code === 'KeyF' && nearLadder) {
+            player.position.set(TOWER_POS.x + 2.2, towerTopY + 1.6, TOWER_POS.z);
+            vY = 0;
+        }
     });
+
     document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
     document.body.addEventListener('click', () => {
         if (bgSound && !bgSound.isPlaying) {
-            bgSound.play();  // 🔊 só começa quando o jogador clica
+            bgSound.play();
         }
         if (gameActive && !shopOpen) {
             document.body.requestPointerLock();
             shoot();
         }
-        enemies.forEach(e => {
-        if (e.userData.sound && !e.userData.sound.isPlaying) {
-            e.userData.sound.play();
-        }
     });
-    });
+
     document.getElementById('closeShop').onclick = toggleShop;
     document.getElementById('restartButton').onclick = restartGame;
-    document.addEventListener('keydown', (e) => {
-    keys[e.code] = true;
-
-    // abrir loja (já existia)
-    if (e.code === 'KeyE') toggleShop();
-
-    // PULO
-    if (e.code === 'Space' && Math.abs(player.position.y - GROUND_Y) < 0.001) {
-        vY = JUMP_FORCE;
-    }
-
-    // SUBIR TORRE (se estiver perto do totem/“escada”)
-    if (e.code === 'KeyF' && nearLadder) {
-        player.position.set(TOWER_POS.x + 2.2, towerTopY + 1.6, TOWER_POS.z); // pousa no topo
-        vY = 0;
-    }
-});
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 }
