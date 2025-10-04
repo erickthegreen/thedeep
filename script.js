@@ -3,6 +3,8 @@ const textureCache = {};
 const enemyRaycaster = new THREE.Raycaster();
 const enemyDownVector = new THREE.Vector3(0, -1, 0);
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (window.innerWidth <= 768);
+let lastTouchX = null, lastTouchY = null;
 let lastLightningTime = 0;
 let sea, lightningLight, tornadoes = [], island, rain, clouds = [], currentBolt = null;
 let scene, camera, renderer, player, listener;
@@ -911,39 +913,140 @@ function setupEventListeners() {
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
-    document.addEventListener('mousemove', (event) => {
-        if (document.pointerLockElement === document.body) {
-            player.rotation.y -= event.movementX * 0.002;
-            camera.rotation.x -= event.movementY * 0.002;
-            camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
-        }
-    });
-    document.addEventListener('keydown', (e) => {
-        keys[e.code] = true;
-        if (e.code === 'KeyP') {
-            wavesPaused = !wavesPaused;
-            document.getElementById("pauseMessage").style.display = wavesPaused ? "block" : "none";
-        }
-        if (e.code === 'KeyE') toggleShop();
-    });
-    document.addEventListener('keyup', (e) => { keys[e.code] = false; });
-    document.body.addEventListener('click', () => {
-        if (gameActive && !shopOpen) {
-            document.body.requestPointerLock();
-            shoot();
-        }
-    });
+
+    if (isMobile) {
+        // --- LÓGICA MOBILE ---
+        setupMobileControls();
+    } else {
+        // --- LÓGICA DESKTOP ---
+        document.addEventListener('mousemove', (event) => {
+            if (document.pointerLockElement === document.body) {
+                player.rotation.y -= event.movementX * 0.002;
+                camera.rotation.x -= event.movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'KeyP') {
+                wavesPaused = !wavesPaused;
+                document.getElementById("pauseMessage").style.display = wavesPaused ? "block" : "none";
+            }
+            if (e.code === 'KeyE') toggleShop();
+        });
+
+        document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+        
+        document.body.addEventListener('click', () => {
+            if (gameActive && !shopOpen) {
+                document.body.requestPointerLock();
+                shoot();
+            }
+        });
+        
+        document.addEventListener("wheel", (e) => {
+            if (shopOpen) return;
+            const ownedIndex = ownedWeapons.indexOf(currentWeapon);
+            if (e.deltaY < 0) {
+                const nextIndex = (ownedIndex + 1) % ownedWeapons.length;
+                equipWeapon(ownedWeapons[nextIndex]);
+            } else {
+                const prevIndex = (ownedIndex - 1 + ownedWeapons.length) % ownedWeapons.length;
+                equipWeapon(ownedWeapons[prevIndex]);
+            }
+        });
+    }
+
     document.getElementById('closeShop').onclick = toggleShop;
     document.getElementById('restartButton').onclick = restartGame;
-    document.addEventListener("wheel", (e) => {
-        if (shopOpen) return;
-        const ownedIndex = ownedWeapons.indexOf(currentWeapon);
-        if (e.deltaY < 0) {
-            const nextIndex = (ownedIndex + 1) % ownedWeapons.length;
-            equipWeapon(ownedWeapons[nextIndex]);
-        } else {
-            const prevIndex = (ownedIndex - 1 + ownedWeapons.length) % ownedWeapons.length;
-            equipWeapon(ownedWeapons[prevIndex]);
+}
+function setupMobileControls() {
+    // --- JOYSTICK DE MOVIMENTO (NippleJS) ---
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystick = nipplejs.create({
+        zone: joystickZone,
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'cyan',
+        size: 120
+    });
+
+    joystick.on('move', (evt, data) => {
+        const angle = data.angle.radian;
+        const force = data.force;
+
+        // Reseta as teclas direcionais
+        keys['KeyW'] = keys['KeyS'] = keys['KeyA'] = keys['KeyD'] = false;
+
+        if (force > 0.2) { // Adiciona uma "zona morta"
+            if (angle > Math.PI * 0.25 && angle < Math.PI * 0.75) keys['KeyW'] = true; // Cima
+            if (angle > Math.PI * 1.25 && angle < Math.PI * 1.75) keys['KeyS'] = true; // Baixo
+            if (angle > Math.PI * 0.75 && angle < Math.PI * 1.25) keys['KeyA'] = true; // Esquerda
+            if (angle < Math.PI * 0.25 || angle > Math.PI * 1.75) keys['KeyD'] = true; // Direita
         }
+    });
+
+    joystick.on('end', () => {
+        keys['KeyW'] = keys['KeyS'] = keys['KeyA'] = keys['KeyD'] = false;
+    });
+
+    // --- CONTROLE DE MIRA (Toque na Tela) ---
+    // Usamos o canvas para capturar os toques de mira
+    const canvas = document.getElementById('gameCanvas');
+
+    canvas.addEventListener('touchstart', (e) => {
+        // Apenas considera toques no lado direito da tela para mirar
+        if (e.touches[0].clientX > window.innerWidth / 2) {
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (lastTouchX === null || shopOpen || !gameActive) return;
+
+        // Apenas considera toques no lado direito da tela
+        if (e.touches[0].clientX > window.innerWidth / 2) {
+            e.preventDefault();
+            const deltaX = e.touches[0].clientX - lastTouchX;
+            const deltaY = e.touches[0].clientY - lastTouchY;
+
+            player.rotation.y -= deltaX * 0.005; // Ajuste a sensibilidade aqui
+            camera.rotation.x -= deltaY * 0.005; // Ajuste a sensibilidade aqui
+            camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+    });
+
+    canvas.addEventListener('touchend', (e) => {
+        // Reseta a posição do último toque quando o dedo é levantado
+        if (e.changedTouches[0].clientX > window.innerWidth / 2) {
+            lastTouchX = null;
+            lastTouchY = null;
+        }
+    });
+
+    // --- BOTÕES DE AÇÃO ---
+    document.getElementById('shoot-button').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shoot();
+    });
+    
+    document.getElementById('shop-button').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        toggleShop();
+    });
+
+    document.getElementById('jump-button').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys['Space'] = true; // Simula o pressionar da tecla de espaço
+    });
+    
+    document.getElementById('jump-button').addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys['Space'] = false; // Simula o soltar da tecla de espaço
     });
 }
