@@ -1,3 +1,9 @@
+const textureLoader = new THREE.TextureLoader();
+const textureCache = {};
+// ADICIONE AS DUAS LINHAS ABAIXO
+const enemyRaycaster = new THREE.Raycaster();
+const enemyDownVector = new THREE.Vector3(0, -1, 0);
+
 let sea, lightningLight, tornadoes = [], island, rain, clouds = [];
 let scene, camera, renderer, player, listener;
 let wavesPaused = false;
@@ -6,9 +12,9 @@ let MONSTER_STATS = {};
 
 // ===== VARIÁVEIS DE FÍSICA E INTERAÇÃO =====
 let vY = 0;
-const GRAVITY = -0.25;
-const JUMP_FORCE = 1;
-const AIR_CONTROL = 0.5;
+const GRAVITY = -0.10;
+const JUMP_FORCE = 2;
+const AIR_CONTROL = 1.5;
 const PLAYER_EYE = 1.6;
 
 // Variáveis do Farol (serão definidas em createLighthouse)
@@ -100,7 +106,7 @@ async function init() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    scene.add(new THREE.AmbientLight(0x1a4d6d, 0.2));
+    scene.add(new THREE.AmbientLight(0x1a4d6d, 1));
 
     player = new THREE.Group();
     player.add(camera);
@@ -128,6 +134,7 @@ async function init() {
     animate();
 }
 
+// Substitua sua função createEnvironment por esta:
 function createEnvironment() {
     scene.fog = new THREE.Fog(0x050a10, 50, 200);
 
@@ -141,13 +148,12 @@ function createEnvironment() {
 
     // --- NUVENS (CÉU COBERTO DE TEMPESTADE) ---
     const cloudMaterial = new THREE.MeshStandardMaterial({
-        color: 0x111122, // Cor mais escura, azulada/acinzentada
+        color: 0x111122,
         transparent: true,
-        opacity: 0.6,    // Mais opacas para fechar o tempo
+        opacity: 0.6,
         fog: false
     });
 
-    // Aumentamos o número de nuvens e a área de cobertura
     for (let i = 0; i < 70; i++) {
         const cloudGroup = new THREE.Group();
         const mainCloud = new THREE.Mesh(new THREE.SphereGeometry(Math.random() * 100 + 50, 16, 12), cloudMaterial);
@@ -161,15 +167,14 @@ function createEnvironment() {
             cloudGroup.add(puff);
         }
         
-        cloudGroup.position.set((Math.random() - 0.5) * 1000, 70 + Math.random() * 25, (Math.random() - 0.5) * 1000);
+        cloudGroup.position.set((Math.random() - 0.5) * 1000, 110 + Math.random() * 25, (Math.random() - 0.5) * 1000);
         scene.add(cloudGroup);
         clouds.push(cloudGroup);
     }
 
-    // --- ILHA CENTRAL (AGORA COMO MORRO) ---
-    const islandGeometry = new THREE.PlaneGeometry(150, 150, 100, 100);
-    // ****** MUDANÇA IMPORTANTE AQUI ******
-    const islandMaterial = new THREE.MeshLambertMaterial({ color: 0x5a4d3b }); // Trocado para LambertMaterial
+    // --- ILHA CENTRAL ---
+    const islandGeometry = new THREE.PlaneGeometry(200, 200, 100, 100);
+    const islandMaterial = new THREE.MeshLambertMaterial({ color: 0x5a4d3b });
     const vertices = islandGeometry.attributes.position.array;
     for (let i = 0; i <= vertices.length; i += 3) {
         const x = vertices[i];
@@ -185,38 +190,42 @@ function createEnvironment() {
     island.receiveShadow = true;
     scene.add(island);
 
-    // --- ROCHAS (DODECAEDROS) ---
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
-    for(let i = 0; i < 20; i++) {
-        const rockSize = Math.random() * 2 + 1;
-        const rockGeo = new THREE.DodecahedronGeometry(rockSize, 0);
-        
-        const rockVertices = rockGeo.attributes.position.array;
-        for(let j = 0; j < rockVertices.length; j++) {
-            rockVertices[j] += (Math.random() - 0.5) * 0.5;
-        }
+    // --- ROCHAS ---
+// const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+// const raycaster = new THREE.Raycaster();
 
-        const rock = new THREE.Mesh(rockGeo, rockMaterial);
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 60 + 15;
-        const rockX = Math.cos(angle) * radius;
-        const rockZ = Math.sin(angle) * radius;
+// for (let i = 0; i < 30; i++) {   // aumenta um pouco a quantidade
+//     const rockSize = Math.random() * 5 + 2;  // rochas menores (2–7 de raio)
+//     const rockGeo = new THREE.SphereGeometry(rockSize, 100); // forma mais orgânica
+//     const rock = new THREE.Mesh(rockGeo, rockMaterial);
 
-        const raycaster = new THREE.Raycaster();
-        raycaster.set(new THREE.Vector3(rockX, 50, rockZ), new THREE.Vector3(0, -1, 0));
-        const intersects = raycaster.intersectObject(island);
-        if(intersects.length > 0) {
-            rock.position.set(rockX, intersects[0].point.y + rockSize * 0.2, rockZ);
-            rock.rotation.set(Math.random(), Math.random(), Math.random());
-            rock.castShadow = true;
-            rock.receiveShadow = true;
-            scene.add(rock);
-        }
-    }
+//     let rockPlaced = false;
+//     for (let attempts = 0; attempts < 20 && !rockPlaced; attempts++) {
+//         const angle = Math.random() * Math.PI * 2;
+//         const radius = Math.random() * 60 + 10; // máximo 70, dentro da ilha
+//         const rockX = Math.cos(angle) * radius;
+//         const rockZ = Math.sin(angle) * radius;
+
+//         raycaster.set(new THREE.Vector3(rockX, 500, rockZ), new THREE.Vector3(0, -1, 0));
+//         const intersects = raycaster.intersectObject(island);
+
+//         if (intersects.length > 0) {
+//             rock.position.set(
+//                 rockX,
+//                 intersects[0].point.y + rockSize * -10, // altura correta
+//                 rockZ
+//             );
+//             rock.rotation.set(Math.random(), Math.random(), Math.random());
+//             rock.castShadow = true;
+//             rock.receiveShadow = true;
+//             scene.add(rock);
+//             rockPlaced = true;
+//         }
+//     }
+// }
     
-    // --- OCEANO ---
+    // --- OCEANO, CHUVA, RAIOS E TORNADOS (sem alterações) ---
     const seaGeometry = new THREE.PlaneGeometry(ARENA_SIZE * 2, ARENA_SIZE * 2, 200, 200);
-    const textureLoader = new THREE.TextureLoader();
     const waterNormalMap = textureLoader.load('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAcFBQYFBAcGBgYIBwcICxILCwoKCxYPEA0SGhYbGhkWGRgcICgiHB4mHhgZIzAkJiorLS4tGyA2PDg4OkM4RUBDAQcHBwYIChwGChHmGRUqIigoR0RHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0f/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAP/xAAfEAACAQMFAQAAAAAAAAAAAAABAgMABBEhMQUSE0H/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AtUaAlE3VxxI71dY2eHyyc8Kysp78EVBcHkXyEbZ4AJj5e+KSbA45MQD2wBmqA//9k=');
     waterNormalMap.wrapS = THREE.RepeatWrapping;
     waterNormalMap.wrapT = THREE.RepeatWrapping;
@@ -242,8 +251,6 @@ function createEnvironment() {
     lightningLight = new THREE.PointLight(0xccffff, 0, ARENA_SIZE * 2);
     lightningLight.position.set(0, 150, 0);
     scene.add(lightningLight);
-    
-    // --- TORNADOS (INVERTIDOS) ---
     for (let i = 0; i < 3; i++) {
         const tornadoHeight = 150;
         const tornadoGeo = new THREE.ConeGeometry(20, tornadoHeight, 32, 64, true);
@@ -258,6 +265,8 @@ function createEnvironment() {
         tornadoes.push(tornado);
     }
 }
+
+
 function createLightningBolt() {
     // Se já existir um raio na cena, removemos antes de criar o próximo
     if (currentBolt) {
@@ -319,12 +328,12 @@ function createLighthouse() {
     TOWER_POS.set(0, 0, 0); 
     
     // --- PARÂMETROS DO FAROL (MAIOR E MAIS LARGO) ---
-    const LIGHTHOUSE_HEIGHT = 70;
-    const LIGHTHOUSE_RADIUS_BASE = 12;
-    const LIGHTHOUSE_RADIUS_TOP = 8;
-    const CUPOLA_HEIGHT = 8;
+    const LIGHTHOUSE_HEIGHT = 80;
+    const LIGHTHOUSE_RADIUS_BASE = 20;
+    const LIGHTHOUSE_RADIUS_TOP = 20;
+    const CUPOLA_HEIGHT = 12;
 
-    const baseHeightOnIsland = 0;
+    const baseHeightOnIsland = 20; // Altura da base do farol acima do nível do mar
 
     const rockBaseGeometry = new THREE.CylinderGeometry(LIGHTHOUSE_RADIUS_BASE + 2, LIGHTHOUSE_RADIUS_BASE + 4, 8, 16);
     const rockBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
@@ -437,7 +446,6 @@ function updatePlayer() {
     if (keys['KeyA']) { direction.x -= 1; isMoving = true; }
     if (keys['KeyD']) { direction.x += 1; isMoving = true; }
     
-    // Calcula o movimento antes de aplicar
     if (isMoving) {
         direction.normalize();
         direction.applyQuaternion(player.quaternion);
@@ -449,18 +457,16 @@ function updatePlayer() {
     const dz = player.position.z - TOWER_POS.z;
     const radialDist = Math.hypot(dx, dz);
 
-    // --- FÍSICA HÍBRIDA ---
+    // --- FÍSICA DE CHÃO ---
     // Se estiver DENTRO do raio do farol, usa a física da escada/plataforma
     if (radialDist < TOWER_RADIUS) {
         let onLighthouseStructure = false;
         
-        // 1. Checa a plataforma do topo
         if (player.position.y >= towerTopY - PLAYER_EYE) {
             player.position.y = towerTopY;
             vY = 0;
             onLighthouseStructure = true;
         } 
-        // 2. Se não, checa a escada com Raycasting
         else {
             const rayOrigin = new THREE.Vector3(player.position.x, player.position.y, player.position.z);
             raycaster.set(rayOrigin, downVector);
@@ -477,9 +483,9 @@ function updatePlayer() {
         }
         onSurface = onLighthouseStructure;
     } 
-    // Se estiver FORA do farol, usa a física da ilha (Raycasting)
+    // Se estiver FORA do farol, usa a física da ilha
     else if (island) {
-        const rayOrigin = new THREE.Vector3(player.position.x, player.position.y + 5, player.position.z);
+        const rayOrigin = new THREE.Vector3(player.position.x, player.position.y + 1, player.position.z);
         raycaster.set(rayOrigin, downVector);
         const intersects = raycaster.intersectObject(island);
         if (intersects.length > 0) {
@@ -492,24 +498,29 @@ function updatePlayer() {
         }
     }
     
+    // ****** LÓGICA DO PULO CORRIGIDA ******
+    // Acontece DEPOIS da checagem de chão e ANTES da aplicação da gravidade
+    if (onSurface && keys['Space']) {
+        vY = JUMP_FORCE;
+    }
+
     // Aplica gravidade se não estiver em nenhuma superfície
     if (!onSurface) {
         vY += GRAVITY;
-        player.position.y += vY;
     }
 
-    // Aplica o movimento horizontal
+    // Aplica o movimento vertical e horizontal
+    player.position.y += vY;
     const factor = onSurface ? 1 : AIR_CONTROL;
     player.position.x += velocity.x * factor;
     player.position.z += velocity.z * factor;
     
-    // --- COLISÃO COM A PAREDE DO FAROL (CORRIGIDA) ---
+    // --- COLISÃO COM A PAREDE DO FAROL ---
     const finalDx = player.position.x - TOWER_POS.x;
     const finalDz = player.position.z - TOWER_POS.z;
     const finalRadialDist = Math.hypot(finalDx, finalDz);
 
     if (finalRadialDist < TOWER_RADIUS) {
-        // Se estiver dentro, empurra para fora
         const overlap = TOWER_RADIUS - finalRadialDist;
         player.position.x += (finalDx / finalRadialDist) * overlap;
         player.position.z += (finalDz / finalRadialDist) * overlap;
@@ -605,14 +616,28 @@ function createPlayerView() {
 
 function createEnemySprite(spritePath) {
     const key = (spritePath === "boss") ? "sprites/boss.png" : spritePath;
-    const tex = new THREE.TextureLoader().load(key);
+    
+    // --- LÓGICA DO CACHE DE TEXTURA ---
+    let tex;
+    if (textureCache[key]) {
+        // Se a textura já foi carregada antes, use a versão em cache
+        tex = textureCache[key];
+    } else {
+        // Se for a primeira vez, carregue a textura e guarde no cache
+        tex = textureLoader.load(key);
+        textureCache[key] = tex;
+    }
+    // --- FIM DA LÓGICA DO CACHE ---
+
     const material = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(6, 6, 1);
+
     const stats = MONSTER_STATS[key] || { health: 20, gold: 10, speed: ENEMY_SPEED };
     sprite.userData.health = stats.health;
     sprite.userData.gold = stats.gold;
     sprite.userData.speed = stats.speed;
+    
     const growl = new THREE.PositionalAudio(listener);
     const audioLoader = new THREE.AudioLoader();
     const soundPath = MONSTER_SOUNDS[spritePath] || "sounds/growl.mp3";
@@ -623,21 +648,39 @@ function createEnemySprite(spritePath) {
     });
     sprite.add(growl);
     sprite.userData.sound = growl;
+
     return sprite;
 }
 
 function updateEnemies() {
     if (wavesPaused) return;
+
     if (enemies.length === 0 && waveInProgress) {
         waveInProgress = false;
         nextWaveTimer = performance.now() + 5000;
     }
+
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        const dir = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+        
+        const dir = new THREE.Vector3().subVectors(player.position, enemy.position);
+        dir.y = 0;
+        dir.normalize();
+
         let baseSpeed = enemy.userData.speed || ENEMY_SPEED;
         let scaledSpeed = baseSpeed * (1 + wave * 0.05);
         enemy.position.add(dir.multiplyScalar(scaledSpeed));
+
+        const enemyRayOrigin = new THREE.Vector3(enemy.position.x, 50, enemy.position.z);
+        enemyRaycaster.set(enemyRayOrigin, enemyDownVector);
+        const intersects = enemyRaycaster.intersectObject(island);
+
+        if (intersects.length > 0) {
+            const groundHeight = intersects[0].point.y;
+            // ****** MUDANÇA IMPORTANTE AQUI ******
+            // Adicionamos metade da altura do monstro (escala de 6 / 2 = 3)
+            enemy.position.y = groundHeight + 3;
+        }
 
         if (enemy.userData.sound && enemy.userData.sound.buffer) {
             const dist = enemy.position.distanceTo(player.position);
