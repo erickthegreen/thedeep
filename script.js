@@ -1,7 +1,24 @@
+let sea, lightningLight, tornadoes = [], island, rain, clouds = [];
 let scene, camera, renderer, player, listener;
 let wavesPaused = false;
 let enemies = [], projectiles = [];
 let MONSTER_STATS = {};
+
+// ===== VARIÁVEIS DE FÍSICA E INTERAÇÃO =====
+let vY = 0;
+const GRAVITY = -0.25;
+const JUMP_FORCE = 1;
+const AIR_CONTROL = 0.5;
+const PLAYER_EYE = 1.6;
+
+// Variáveis do Farol (serão definidas em createLighthouse)
+let TOWER_RADIUS = 12; 
+let TOWER_HEIGHT = 80;
+let TOWER_POS = new THREE.Vector3(0, 0, 0);
+let towerTopY = TOWER_HEIGHT;
+let stairSteps = []; // Array para guardar os degraus da escada
+
+let beaconPivot = null;
 
 const WEAPON_SOUNDS = {
     0: "sounds/harpoon.mp3", 1: "sounds/dart.mp3", 2: "sounds/piercing.mp3",
@@ -35,26 +52,8 @@ let nextWaveTimer = 0;
 let gameActive = true, shopOpen = false, lastShot = 0;
 let ownedWeapons = [0], currentWeapon = 0;
 const keys = {};
-const PLAYER_SPEED = 0.15, ENEMY_SPEED = 0.05, ARENA_SIZE = 50;
+const PLAYER_SPEED = 0.15, ENEMY_SPEED = 0.05, ARENA_SIZE = 250;
 
-let ambientParticles, fishSchool;
-
-// ===== VARIÁVEIS DE FÍSICA E INTERAÇÃO =====
-let vY = 0;
-const GRAVITY = -0.018;
-const JUMP_FORCE = 0.25;
-const GROUND_Y = 0;
-const AIR_CONTROL = 0.5;
-
-// ==== VARIÁVEIS GLOBAIS DO FAROL (usando 'let' para permitir modificação) ====
-let TOWER_RADIUS = 6;
-let TOWER_HEIGHT = 20;
-let TOWER_POS = new THREE.Vector3(8, 0, -12);
-const STAIR_CAPTURE = 3.5;
-const PLAYER_EYE = 1.6;
-let towerTopY = TOWER_HEIGHT;
-let stairPointsWorld = [];
-let beaconPivot = null;
 
 const weapons = [
     { name: "Pistola de Arpão", cost: 0, damage: 25, fireRate: 400, speed: 0.6, color: 0x00ffff, size: 0.3, description: "Arma inicial básica" },
@@ -92,16 +91,16 @@ async function init() {
             if (ctx.state === "suspended") ctx.resume();
         }
     }, { once: true });
+    
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#gameCanvas'), antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000d1a);
-    scene.fog = new THREE.FogExp2(0x001a33, 0.02);
+    
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    scene.add(new THREE.AmbientLight(0x1a4d6d, 0.3));
-    const p1 = new THREE.PointLight(0x00a8cc, 0.8, 100);
-    p1.position.set(0, 20, 0);
-    scene.add(p1);
+    scene.add(new THREE.AmbientLight(0x1a4d6d, 0.2));
 
     player = new THREE.Group();
     player.add(camera);
@@ -120,213 +119,469 @@ async function init() {
         document.body.addEventListener('click', () => { if (!bgSound.isPlaying) bgSound.play(); }, { once: true });
     });
 
-    animate();
     createEnvironment();
     createLighthouse();
     createPlayerView();
-    createAmbientLife();
     setupEventListeners();
     restartGame();
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-
-    if (gameActive && !shopOpen) {
-        updatePlayer();
-        updateEnemies();
-        updateProjectiles();
-        updateAmbientLife();
-
-        if (!wavesPaused && !waveInProgress && performance.now() > nextWaveTimer) {
-            wave++;
-            enemyCount += 2;
-            spawnWave();
-        }
-    }
-
-    if (beaconPivot) beaconPivot.rotation.y += 0.01;
-
-    renderer.render(scene, camera);
+    
+    animate();
 }
 
 function createEnvironment() {
-    const floorGeometry = new THREE.PlaneGeometry(ARENA_SIZE * 2, ARENA_SIZE * 2, 20, 20);
-    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x0d1b2a, roughness: 0.95, metalness: 0.1 });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -5;
-    scene.add(floor);
+    scene.fog = new THREE.Fog(0x050a10, 50, 200);
 
-    for (let i = 0; i < 50; i++) {
-        const rockGeo = new THREE.SphereGeometry(Math.random() * 2 + 1, 8, 8);
-        const rockMat = new THREE.MeshStandardMaterial({ color: 0x2a4455, roughness: 0.9 });
-        const rock = new THREE.Mesh(rockGeo, rockMat);
-        rock.position.set((Math.random() - 0.5) * ARENA_SIZE * 1.8, -5 + Math.random(), (Math.random() - 0.5) * ARENA_SIZE * 1.8);
-        scene.add(rock);
+    const skyboxLoader = new THREE.CubeTextureLoader();
+    const skyboxTexture = skyboxLoader.load([
+        'https://i.imgur.com/M8S1GqW.jpg', 'https://i.imgur.com/zQ3zJ4H.jpg',
+        'https://i.imgur.com/c5UeTef.jpg', 'https://i.imgur.com/N33yH5f.jpg',
+        'https://i.imgur.com/M8S1GqW.jpg', 'https://i.imgur.com/zQ3zJ4H.jpg'
+    ]);
+    scene.background = skyboxTexture;
+
+    // --- NUVENS (CÉU COBERTO DE TEMPESTADE) ---
+    const cloudMaterial = new THREE.MeshStandardMaterial({
+        color: 0x111122, // Cor mais escura, azulada/acinzentada
+        transparent: true,
+        opacity: 0.6,    // Mais opacas para fechar o tempo
+        fog: false
+    });
+
+    // Aumentamos o número de nuvens e a área de cobertura
+    for (let i = 0; i < 70; i++) {
+        const cloudGroup = new THREE.Group();
+        const mainCloud = new THREE.Mesh(new THREE.SphereGeometry(Math.random() * 100 + 50, 16, 12), cloudMaterial);
+        mainCloud.scale.y = 0.3 + Math.random() * 0.2;
+        cloudGroup.add(mainCloud);
+
+        for (let j = 0; j < 4; j++) {
+            const puff = new THREE.Mesh(new THREE.SphereGeometry(Math.random() * 20 + 10, 8, 8), cloudMaterial);
+            puff.position.set((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 80);
+            puff.scale.y = 0.5;
+            cloudGroup.add(puff);
+        }
+        
+        cloudGroup.position.set((Math.random() - 0.5) * 1000, 70 + Math.random() * 25, (Math.random() - 0.5) * 1000);
+        scene.add(cloudGroup);
+        clouds.push(cloudGroup);
     }
+
+    // --- ILHA CENTRAL (AGORA COMO MORRO) ---
+    const islandGeometry = new THREE.PlaneGeometry(150, 150, 100, 100);
+    // ****** MUDANÇA IMPORTANTE AQUI ******
+    const islandMaterial = new THREE.MeshLambertMaterial({ color: 0x5a4d3b }); // Trocado para LambertMaterial
+    const vertices = islandGeometry.attributes.position.array;
+    for (let i = 0; i <= vertices.length; i += 3) {
+        const x = vertices[i];
+        const y = vertices[i + 1];
+        const dist = Math.sqrt(x * x + y * y);
+        const z = 25 * Math.exp(-dist * dist * 0.0002);
+        vertices[i + 2] = Math.max(0, z);
+    }
+    islandGeometry.computeVertexNormals();
+    island = new THREE.Mesh(islandGeometry, islandMaterial);
+    island.rotation.x = -Math.PI / 2;
+    island.position.y = -4;
+    island.receiveShadow = true;
+    scene.add(island);
+
+    // --- ROCHAS (DODECAEDROS) ---
+    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+    for(let i = 0; i < 20; i++) {
+        const rockSize = Math.random() * 2 + 1;
+        const rockGeo = new THREE.DodecahedronGeometry(rockSize, 0);
+        
+        const rockVertices = rockGeo.attributes.position.array;
+        for(let j = 0; j < rockVertices.length; j++) {
+            rockVertices[j] += (Math.random() - 0.5) * 0.5;
+        }
+
+        const rock = new THREE.Mesh(rockGeo, rockMaterial);
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 60 + 15;
+        const rockX = Math.cos(angle) * radius;
+        const rockZ = Math.sin(angle) * radius;
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.set(new THREE.Vector3(rockX, 50, rockZ), new THREE.Vector3(0, -1, 0));
+        const intersects = raycaster.intersectObject(island);
+        if(intersects.length > 0) {
+            rock.position.set(rockX, intersects[0].point.y + rockSize * 0.2, rockZ);
+            rock.rotation.set(Math.random(), Math.random(), Math.random());
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            scene.add(rock);
+        }
+    }
+    
+    // --- OCEANO ---
+    const seaGeometry = new THREE.PlaneGeometry(ARENA_SIZE * 2, ARENA_SIZE * 2, 200, 200);
+    const textureLoader = new THREE.TextureLoader();
+    const waterNormalMap = textureLoader.load('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAcFBQYFBAcGBgYIBwcICxILCwoKCxYPEA0SGhYbGhkWGRgcICgiHB4mHhgZIzAkJiorLS4tGyA2PDg4OkM4RUBDAQcHBwYIChwGChHmGRUqIigoR0RHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0f/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAP/xAAfEAACAQMFAQAAAAAAAAAAAAABAgMABBEhMQUSE0H/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AtUaAlE3VxxI71dY2eHyyc8Kysp78EVBcHkXyEbZ4AJj5e+KSbA45MQD2wBmqA//9k=');
+    waterNormalMap.wrapS = THREE.RepeatWrapping;
+    waterNormalMap.wrapT = THREE.RepeatWrapping;
+    const seaMaterial = new THREE.MeshStandardMaterial({
+        color: 0x001a33, roughness: 0.2, metalness: 0.8, transparent: true, opacity: 0.9,
+        normalMap: waterNormalMap, normalScale: new THREE.Vector2(2, 2)
+    });
+    sea = new THREE.Mesh(seaGeometry, seaMaterial);
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.y = -2;
+    sea.receiveShadow = true;
+    scene.add(sea);
+    const rainCount = 10000;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainVertices = [];
+    for (let i = 0; i < rainCount; i++) {
+        rainVertices.push( Math.random() * 400 - 200, Math.random() * 100, Math.random() * 400 - 200 );
+    }
+    rainGeo.setAttribute('position', new THREE.Float32BufferAttribute(rainVertices, 3));
+    const rainMaterial = new THREE.PointsMaterial({ color: 0xaaaaaa, size: 0.2, transparent: true, opacity: 0.7 });
+    rain = new THREE.Points(rainGeo, rainMaterial);
+    scene.add(rain);
+    lightningLight = new THREE.PointLight(0xccffff, 0, ARENA_SIZE * 2);
+    lightningLight.position.set(0, 150, 0);
+    scene.add(lightningLight);
+    
+    // --- TORNADOS (INVERTIDOS) ---
+    for (let i = 0; i < 3; i++) {
+        const tornadoHeight = 150;
+        const tornadoGeo = new THREE.ConeGeometry(20, tornadoHeight, 32, 64, true);
+        const tornadoMat = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+        const tornado = new THREE.Mesh(tornadoGeo, tornadoMat);
+        const angle = Math.random() * Math.PI * 2;
+        const dist = ARENA_SIZE * 0.8;
+        tornado.rotation.x = Math.PI;
+        tornado.position.set(Math.cos(angle) * dist, sea.position.y + tornadoHeight/2 - 5, Math.sin(angle) * dist);
+        tornado.castShadow = true;
+        scene.add(tornado);
+        tornadoes.push(tornado);
+    }
+}
+function createLightningBolt() {
+    // Se já existir um raio na cena, removemos antes de criar o próximo
+    if (currentBolt) {
+        scene.remove(currentBolt);
+    }
+
+    const boltMaterial = new THREE.MeshBasicMaterial({ color: 0xccffff });
+    const boltGroup = new THREE.Group();
+
+    // Ponto de início do raio, bem alto no céu
+    let startPoint = new THREE.Vector3(
+        (Math.random() - 0.5) * 300,
+        120, // Altura inicial
+        (Math.random() - 0.5) * 300
+    );
+
+    let endPoint = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+    
+    // O raio será composto por vários segmentos
+    for (let i = 0; i < 8; i++) {
+        // Define uma direção aleatória para o próximo segmento, sempre para baixo
+        direction.set(
+            (Math.random() - 0.5) * 25,
+            -15 - Math.random() * 10, // Segmento com 15-25 unidades para baixo
+            (Math.random() - 0.5) * 25
+        );
+        endPoint.copy(startPoint).add(direction);
+
+        const distance = startPoint.distanceTo(endPoint);
+        // Cria o segmento do raio como um cilindro fino
+        const cylinder = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.3, 0.3, distance, 8),
+            boltMaterial
+        );
+
+        // Posiciona o cilindro no meio do caminho entre o ponto inicial e final
+        cylinder.position.copy(startPoint).lerp(endPoint, 0.5);
+        // Orienta o cilindro para conectar os dois pontos
+        cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+
+        boltGroup.add(cylinder);
+        startPoint.copy(endPoint); // O novo ponto de partida é o final do anterior
+    }
+
+    scene.add(boltGroup);
+    currentBolt = boltGroup; // Armazena a referência do raio atual
+
+    // O raio desaparece rapidamente para criar o efeito de flash
+    setTimeout(() => {
+        if (currentBolt === boltGroup) { // Garante que não estamos removendo um raio mais novo
+            scene.remove(boltGroup);
+            currentBolt = null;
+        }
+    }, 150 + Math.random() * 150); // Duração de 150 a 300 milissegundos
 }
 
 function createLighthouse() {
-    const LIGHTHOUSE_X = 8;
-    const LIGHTHOUSE_Z = -12;
-    const LIGHTHOUSE_HEIGHT = 20;
-    const LIGHTHOUSE_RADIUS_BASE = 6;
-    const LIGHTHOUSE_RADIUS_TOP = 4;
-    const CUPOLA_HEIGHT = 4;
+    TOWER_POS.set(0, 0, 0); 
+    
+    // --- PARÂMETROS DO FAROL (MAIOR E MAIS LARGO) ---
+    const LIGHTHOUSE_HEIGHT = 70;
+    const LIGHTHOUSE_RADIUS_BASE = 12;
+    const LIGHTHOUSE_RADIUS_TOP = 8;
+    const CUPOLA_HEIGHT = 8;
 
-    const rockBaseGeometry = new THREE.CylinderGeometry(LIGHTHOUSE_RADIUS_BASE + 2, LIGHTHOUSE_RADIUS_BASE + 3, LIGHTHOUSE_HEIGHT / 3, 16);
-    const rockBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, metalness: 0.1 });
+    const baseHeightOnIsland = 0;
+
+    const rockBaseGeometry = new THREE.CylinderGeometry(LIGHTHOUSE_RADIUS_BASE + 2, LIGHTHOUSE_RADIUS_BASE + 4, 8, 16);
+    const rockBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
     const rockBase = new THREE.Mesh(rockBaseGeometry, rockBaseMaterial);
-    rockBase.position.set(LIGHTHOUSE_X, LIGHTHOUSE_HEIGHT / 6 + GROUND_Y - 1, LIGHTHOUSE_Z);
+    rockBase.position.set(TOWER_POS.x, baseHeightOnIsland - 2, TOWER_POS.z);
+    rockBase.receiveShadow = true;
+    rockBase.castShadow = true;
     scene.add(rockBase);
 
-    const stripHeight = LIGHTHOUSE_HEIGHT / 5;
-    for (let i = 0; i < 5; i++) {
-        const material = (i % 2 === 0)
-            ? new THREE.MeshStandardMaterial({ color: 0xaa0000, roughness: 0.6, metalness: 0.1 })
-            : new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.1 });
+    const doorGeo = new THREE.BoxGeometry(3.5, 6, 1);
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const door = new THREE.Mesh(doorGeo, doorMat);
+    door.position.set(TOWER_POS.x, baseHeightOnIsland + 3, TOWER_POS.z - LIGHTHOUSE_RADIUS_BASE + 0.1);
+    scene.add(door);
 
+    const stripHeight = LIGHTHOUSE_HEIGHT / 6;
+    for (let i = 0; i < 6; i++) {
+        const material = (i % 2 === 0)
+            ? new THREE.MeshStandardMaterial({ color: 0xaa0000, roughness: 0.6 })
+            : new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
         const stripGeo = new THREE.CylinderGeometry(
-            THREE.MathUtils.lerp(LIGHTHOUSE_RADIUS_BASE, LIGHTHOUSE_RADIUS_TOP, (i + 0.1) / 5),
-            THREE.MathUtils.lerp(LIGHTHOUSE_RADIUS_BASE, LIGHTHOUSE_RADIUS_TOP, (i + 0.9) / 5),
-            stripHeight, 32, 1, true
+            THREE.MathUtils.lerp(LIGHTHOUSE_RADIUS_BASE, LIGHTHOUSE_RADIUS_TOP, i / 6),
+            THREE.MathUtils.lerp(LIGHTHOUSE_RADIUS_BASE, LIGHTHOUSE_RADIUS_TOP, (i + 1) / 6),
+            stripHeight, 32
         );
         const stripMesh = new THREE.Mesh(stripGeo, material);
-        stripMesh.position.set(LIGHTHOUSE_X, GROUND_Y + 1.5 + stripHeight / 2 + i * stripHeight, LIGHTHOUSE_Z);
+        stripMesh.position.set(TOWER_POS.x, baseHeightOnIsland + stripHeight / 2 + i * stripHeight, TOWER_POS.z);
+        stripMesh.castShadow = true;
         scene.add(stripMesh);
     }
-    towerTopY = GROUND_Y + 1.5 + LIGHTHOUSE_HEIGHT;
-
-    const cupolaGeo = new THREE.CylinderGeometry(LIGHTHOUSE_RADIUS_TOP * 0.9, LIGHTHOUSE_RADIUS_TOP * 0.9, CUPOLA_HEIGHT, 16);
-    const cupolaMaterial = new THREE.MeshStandardMaterial({ color: 0x445566, transparent: true, opacity: 0.8, roughness: 0.2, metalness: 0.5 });
+    towerTopY = baseHeightOnIsland + LIGHTHOUSE_HEIGHT;
+    const cupolaGeo = new THREE.CylinderGeometry(LIGHTHOUSE_RADIUS_TOP, LIGHTHOUSE_RADIUS_TOP, CUPOLA_HEIGHT, 16);
+    const cupolaMaterial = new THREE.MeshStandardMaterial({ color: 0x445566, transparent: true, opacity: 0.8, roughness: 0.2 });
     const cupola = new THREE.Mesh(cupolaGeo, cupolaMaterial);
-    cupola.position.set(LIGHTHOUSE_X, towerTopY + CUPOLA_HEIGHT / 2, LIGHTHOUSE_Z);
+    cupola.position.set(TOWER_POS.x, towerTopY + CUPOLA_HEIGHT / 2, TOWER_POS.z);
     scene.add(cupola);
-
-    const roofGeo = new THREE.ConeGeometry(LIGHTHOUSE_RADIUS_TOP * 1.1, 2, 16);
-    const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.8 });
+    const roofGeo = new THREE.ConeGeometry(LIGHTHOUSE_RADIUS_TOP + 1, 4, 16);
+    const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 });
     const roof = new THREE.Mesh(roofGeo, roofMaterial);
-    roof.position.set(LIGHTHOUSE_X, towerTopY + CUPOLA_HEIGHT + 1, LIGHTHOUSE_Z);
+    roof.position.set(TOWER_POS.x, towerTopY + CUPOLA_HEIGHT + 2, TOWER_POS.z);
+    roof.castShadow = true;
     scene.add(roof);
-    
-    const spotLight = new THREE.SpotLight(0xffffaa, 3, 100, Math.PI / 8, 0.5, 2);
+
+    const spotLight = new THREE.SpotLight(0xffffdd, 50, 350, Math.PI / 8, 0.4, 1.5);
+    spotLight.castShadow = true;
+    spotLight.shadow.mapSize.width = 1024;
+    spotLight.shadow.mapSize.height = 1024;
+    spotLight.shadow.camera.near = 10;
+    spotLight.shadow.camera.far = 300;
     beaconPivot = new THREE.Group();
     spotLight.target = new THREE.Object3D();
     beaconPivot.add(spotLight);
     beaconPivot.add(spotLight.target);
-    beaconPivot.position.set(LIGHTHOUSE_X, towerTopY + CUPOLA_HEIGHT / 2, LIGHTHOUSE_Z);
-    spotLight.target.position.set(LIGHTHOUSE_X, towerTopY, LIGHTHOUSE_Z-10); // Target moves with pivot
+    beaconPivot.position.set(TOWER_POS.x, towerTopY + CUPOLA_HEIGHT / 2, TOWER_POS.z);
+    spotLight.target.position.set(50, 0, 0);
     scene.add(beaconPivot);
+    
+    // --- ESCADARIA EM ESPIRAL (TANGÍVEL) ---
+    stairSteps = [];
+    const stepMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const stepsGroup = new THREE.Group();
+    const totalSteps = 100;
+    const stairHeight = LIGHTHOUSE_HEIGHT - 2;
+    const innerRadius = LIGHTHOUSE_RADIUS_BASE * 0.8;
 
-    const rampMaterial = new THREE.MeshStandardMaterial({ color: 0x445566, side: THREE.DoubleSide });
-    const rampGroup = new THREE.Group();
-    const turns = 3.5;
-    const steps = 150;
-    const innerRadius = LIGHTHOUSE_RADIUS_TOP * 0.8;
-    const rampWidth = 2;
-    stairPointsWorld = [];
+    for (let i = 0; i < totalSteps; i++) {
+        const stepHeight = 0.2;
+        const stepDepth = 2.0;
+        const stepWidth = 4.0;
+        
+        const angle = (i / totalSteps) * Math.PI * 10; // 5 voltas completas
+        const y = baseHeightOnIsland + 2 + (i / totalSteps) * stairHeight;
+        
+        const stepGeo = new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth);
+        const step = new THREE.Mesh(stepGeo, stepMaterial);
 
-    for (let i = 0; i < steps; i++) {
-        const angle = (i / steps) * (Math.PI * 2 * turns);
-        const y = GROUND_Y + (i / steps) * LIGHTHOUSE_HEIGHT * 0.9 + 1.5;
-        const x = LIGHTHOUSE_X + Math.cos(angle) * innerRadius;
-        const z = LIGHTHOUSE_Z + Math.sin(angle) * innerRadius;
-        stairPointsWorld.push(new THREE.Vector3(x, y, z));
-        const rampSegment = new THREE.BoxGeometry(rampWidth, 0.2, 1.5);
-        const mesh = new THREE.Mesh(rampSegment, rampMaterial);
-        mesh.position.set(x, y, z);
-        mesh.lookAt(LIGHTHOUSE_X, y, LIGHTHOUSE_Z);
-        rampGroup.add(mesh);
+        const x = TOWER_POS.x + Math.cos(angle) * (innerRadius - stepDepth/2);
+        const z = TOWER_POS.z + Math.sin(angle) * (innerRadius - stepDepth/2);
+
+        step.position.set(x, y, z);
+        step.rotation.y = -angle;
+        step.castShadow = true;
+        
+        stepsGroup.add(step);
+        stairSteps.push(step); // Adiciona ao array para a física
     }
-    scene.add(rampGroup);
+    scene.add(stepsGroup);
 
-    TOWER_POS.set(LIGHTHOUSE_X, GROUND_Y, LIGHTHOUSE_Z);
-    TOWER_HEIGHT = LIGHTHOUSE_HEIGHT + CUPOLA_HEIGHT + 2;
+    // Atualiza as variáveis globais
+    TOWER_HEIGHT = LIGHTHOUSE_HEIGHT + CUPOLA_HEIGHT + 4;
     TOWER_RADIUS = LIGHTHOUSE_RADIUS_BASE;
 }
 
-function handleTowerAndStairs() {
-    if (!stairPointsWorld || stairPointsWorld.length === 0) return false;
-
-    const dx = player.position.x - TOWER_POS.x;
-    const dz = player.position.z - TOWER_POS.z;
-    const radialDist = Math.hypot(dx, dz);
-    let onStairs = false;
-    const wallRadius = TOWER_RADIUS - 0.2;
-
-    if (radialDist < wallRadius) {
-        let nearestPoint = null;
-        let bestDistSq = Infinity;
-        for (const p of stairPointsWorld) {
-            const dSq = player.position.distanceToSquared(p);
-            if (dSq < bestDistSq) {
-                bestDistSq = dSq;
-                nearestPoint = p;
-            }
-        }
-        if (nearestPoint && bestDistSq < STAIR_CAPTURE * STAIR_CAPTURE) {
-            const targetY = nearestPoint.y + PLAYER_EYE;
-            if (player.position.y < targetY + 0.5) {
-                player.position.y = targetY;
-                vY = 0;
-                onStairs = true;
-            }
-        }
-    } else if (radialDist < TOWER_RADIUS) {
-        const overlap = TOWER_RADIUS - radialDist;
-        player.position.x += (dx / radialDist) * overlap;
-        player.position.z += (dz / radialDist) * overlap;
-    }
-    return onStairs;
-}
+const raycaster = new THREE.Raycaster();
+const downVector = new THREE.Vector3(0, -1, 0);
 
 function updatePlayer() {
     if (shopOpen) return;
 
+    if (player.position.y < -1.5) {
+        gameOver();
+        return;
+    }
+
     const direction = new THREE.Vector3();
+    const velocity = new THREE.Vector3();
     let isMoving = false;
     if (keys['KeyW']) { direction.z -= 1; isMoving = true; }
     if (keys['KeyS']) { direction.z += 1; isMoving = true; }
     if (keys['KeyA']) { direction.x -= 1; isMoving = true; }
     if (keys['KeyD']) { direction.x += 1; isMoving = true; }
-
-    let onPlatform = false;
-    let onGround = false;
-
-    let onStairs = handleTowerAndStairs();
-
+    
+    // Calcula o movimento antes de aplicar
+    if (isMoving) {
+        direction.normalize();
+        direction.applyQuaternion(player.quaternion);
+        velocity.copy(direction).multiplyScalar(PLAYER_SPEED);
+    }
+    
+    let onSurface = false;
     const dx = player.position.x - TOWER_POS.x;
     const dz = player.position.z - TOWER_POS.z;
     const radialDist = Math.hypot(dx, dz);
 
-    if (radialDist < TOWER_RADIUS && player.position.y >= towerTopY) {
-        player.position.y = towerTopY + PLAYER_EYE;
-        vY = 0;
-        onPlatform = true;
-        onStairs = false;
+    // --- FÍSICA HÍBRIDA ---
+    // Se estiver DENTRO do raio do farol, usa a física da escada/plataforma
+    if (radialDist < TOWER_RADIUS) {
+        let onLighthouseStructure = false;
+        
+        // 1. Checa a plataforma do topo
+        if (player.position.y >= towerTopY - PLAYER_EYE) {
+            player.position.y = towerTopY;
+            vY = 0;
+            onLighthouseStructure = true;
+        } 
+        // 2. Se não, checa a escada com Raycasting
+        else {
+            const rayOrigin = new THREE.Vector3(player.position.x, player.position.y, player.position.z);
+            raycaster.set(rayOrigin, downVector);
+            const intersects = raycaster.intersectObjects(stairSteps);
+            
+            if (intersects.length > 0) {
+                const groundHeight = intersects[0].point.y;
+                if(player.position.y < groundHeight + PLAYER_EYE + 0.5) {
+                    player.position.y = groundHeight + PLAYER_EYE;
+                    vY = 0;
+                    onLighthouseStructure = true;
+                }
+            }
+        }
+        onSurface = onLighthouseStructure;
+    } 
+    // Se estiver FORA do farol, usa a física da ilha (Raycasting)
+    else if (island) {
+        const rayOrigin = new THREE.Vector3(player.position.x, player.position.y + 5, player.position.z);
+        raycaster.set(rayOrigin, downVector);
+        const intersects = raycaster.intersectObject(island);
+        if (intersects.length > 0) {
+            const groundHeight = intersects[0].point.y;
+            if (player.position.y < groundHeight + PLAYER_EYE + 0.5) {
+                player.position.y = groundHeight + PLAYER_EYE;
+                vY = 0;
+                onSurface = true;
+            }
+        }
     }
-
-    let onAnySurface = onPlatform || onStairs;
-
-    if (!onAnySurface) {
+    
+    // Aplica gravidade se não estiver em nenhuma superfície
+    if (!onSurface) {
         vY += GRAVITY;
         player.position.y += vY;
+    }
 
-        if (player.position.y < GROUND_Y + PLAYER_EYE) {
-            player.position.y = GROUND_Y + PLAYER_EYE;
-            vY = 0;
-            onGround = true;
+    // Aplica o movimento horizontal
+    const factor = onSurface ? 1 : AIR_CONTROL;
+    player.position.x += velocity.x * factor;
+    player.position.z += velocity.z * factor;
+    
+    // --- COLISÃO COM A PAREDE DO FAROL (CORRIGIDA) ---
+    const finalDx = player.position.x - TOWER_POS.x;
+    const finalDz = player.position.z - TOWER_POS.z;
+    const finalRadialDist = Math.hypot(finalDx, finalDz);
+
+    if (finalRadialDist < TOWER_RADIUS) {
+        // Se estiver dentro, empurra para fora
+        const overlap = TOWER_RADIUS - finalRadialDist;
+        player.position.x += (finalDx / finalRadialDist) * overlap;
+        player.position.z += (finalDz / finalRadialDist) * overlap;
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    const time = performance.now() * 0.0005;
+
+    // --- ANIMAÇÃO DO AMBIENTE ---
+    if (sea) {
+        const seaVertices = sea.geometry.attributes.position.array;
+        for (let i = 0; i < seaVertices.length; i += 3) {
+            const x = seaVertices[i];
+            const y = seaVertices[i + 1];
+            // ONDAS MAIS FORTES
+            const wave1 = Math.sin(x * 0.05 + time) * 3.5;
+            const wave2 = Math.sin(y * 0.03 + time * 0.8) * 3.5;
+            seaVertices[i + 2] = wave1 + wave2;
+        }
+        sea.geometry.attributes.position.needsUpdate = true;
+        sea.geometry.computeVertexNormals();
+
+        if (sea.material.normalMap) {
+            sea.material.normalMap.offset.x += 0.0005;
+            sea.material.normalMap.offset.y += 0.0002;
+        }
+    }
+    
+    if (lightningLight && Math.random() > 0.998) {
+        lightningLight.intensity = Math.random() * 5 + 2;
+        setTimeout(() => {
+            lightningLight.intensity = 0;
+        }, 100 + Math.random() * 150);
+    }
+    
+    tornadoes.forEach(tornado => {
+        tornado.rotation.y += 0.05;
+    });
+
+    if (rain) {
+        const rainVertices = rain.geometry.attributes.position.array;
+        for (let i = 1; i < rainVertices.length; i += 3) {
+            rainVertices[i] -= 0.5;
+            if (rainVertices[i] < -5) {
+                rainVertices[i] = 100;
+            }
+        }
+        rain.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // --- LÓGICA DO JOGO ---
+    if (gameActive && !shopOpen) {
+        updatePlayer();
+        updateEnemies();
+        updateProjectiles();
+
+        // CÓDIGO CORRIGIDO PARA INICIAR A PRÓXIMA ONDA
+        if (!waveInProgress && nextWaveTimer > 0 && performance.now() > nextWaveTimer) {
+            wave++;
+            enemyCount += 2; // Aumenta o número de inimigos a cada onda
+            spawnWave();
+            nextWaveTimer = 0; // Reseta o timer para evitar chamadas múltiplas
         }
     }
 
-    if (isMoving) {
-        direction.normalize();
-        direction.applyQuaternion(player.quaternion);
-        const airborne = !onAnySurface && !onGround;
-        const factor = airborne ? AIR_CONTROL : 1;
-        player.position.add(direction.multiplyScalar(PLAYER_SPEED * factor));
+    if (beaconPivot) {
+        beaconPivot.rotation.y += 0.02;
     }
+
+    renderer.render(scene, camera);
 }
 
 function createPlayerView() {
@@ -369,40 +624,6 @@ function createEnemySprite(spritePath) {
     sprite.add(growl);
     sprite.userData.sound = growl;
     return sprite;
-}
-
-function createAmbientLife() {
-    const particleCount = 2000;
-    const particlePositions = [];
-    for (let i = 0; i < particleCount; i++) { particlePositions.push((Math.random() - 0.5) * ARENA_SIZE * 2, Math.random() * 40 - 5, (Math.random() - 0.5) * ARENA_SIZE * 2); }
-    const particleGeometry = new THREE.BufferGeometry();
-    particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
-    const particleMaterial = new THREE.PointsMaterial({ color: 0x6ba3d0, size: 0.1, transparent: true, opacity: 0.4 });
-    ambientParticles = new THREE.Points(particleGeometry, particleMaterial);
-    scene.add(ambientParticles);
-    fishSchool = new THREE.Group();
-    const fishGeo = new THREE.ConeGeometry(0.1, 0.5, 4);
-    const fishMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, emissive: 0x4fc3f7, emissiveIntensity: 0.2 });
-    for (let i = 0; i < 30; i++) {
-        const fish = new THREE.Mesh(fishGeo, fishMat);
-        fish.position.set((Math.random() - 0.5) * ARENA_SIZE, Math.random() * 10, (Math.random() - 0.5) * ARENA_SIZE);
-        fish.rotation.z = Math.PI / 2;
-        fish.userData.speed = Math.random() * 0.02 + 0.01;
-        fishSchool.add(fish);
-    }
-    scene.add(fishSchool);
-}
-
-function updateAmbientLife() {
-    if (!ambientParticles || !fishSchool) return;
-    ambientParticles.position.y -= 0.01;
-    if (ambientParticles.position.y < -20) { ambientParticles.position.y = 20; }
-    fishSchool.children.forEach(fish => {
-        fish.position.x += fish.userData.speed;
-        fish.rotation.y = Math.sin(fish.position.x * 0.5) * 0.3;
-        if (fish.position.x > ARENA_SIZE) { fish.position.x = -ARENA_SIZE; }
-        scene.fog.density = 0.018 + Math.sin(Date.now() * 0.001) * 0.005;
-    });
 }
 
 function updateEnemies() {
@@ -540,13 +761,25 @@ function restartGame() {
         scene.remove(e);
     });
     projectiles.forEach(p => scene.remove(p));
-    enemies = []; projectiles = [];
-    kills = 0; gold = 0; wave = 1; enemyCount = 2;
-    currentWeapon = 0; ownedWeapons = [0];
-    gameActive = true; shopOpen = false;
+    
+    enemies = [];
+    projectiles = [];
+
+    kills = 0;
+    gold = 0;
+    wave = 1;
+    enemyCount = 2;
+    currentWeapon = 0;
+    ownedWeapons = [0];
+    gameActive = true;
+    shopOpen = false;
     wavesPaused = false;
-    player.position.set(0, GROUND_Y + PLAYER_EYE, 5);
-    player.rotation.set(0, 0, 0); camera.rotation.set(0, 0, 0);
+
+    // Posição inicial fora do farol
+    player.position.set(30, 40, 30);
+    player.rotation.set(0, 0, 0);
+    camera.rotation.set(0, 0, 0);
+
     document.getElementById('kills').textContent = 0;
     document.getElementById('gold').textContent = 0;
     document.getElementById('wave').textContent = 1;
@@ -554,6 +787,7 @@ function restartGame() {
     document.getElementById('gameOver').style.display = 'none';
     document.getElementById('shop').style.display = 'none';
     document.getElementById("pauseMessage").style.display = "none";
+    
     updateGunAppearance();
     spawnWave();
 }
@@ -652,10 +886,10 @@ function setupEventListeners() {
             document.getElementById("pauseMessage").style.display = wavesPaused ? "block" : "none";
         }
         if (e.code === 'KeyE') toggleShop();
+        
         if (e.code === 'Space') {
-            const onAnySurface = player.position.y <= GROUND_Y + PLAYER_EYE + 0.1 ||
-                (Math.hypot(player.position.x - TOWER_POS.x, player.position.z - TOWER_POS.z) < TOWER_RADIUS);
-            if(onAnySurface) {
+            // Permite o pulo apenas se a velocidade vertical for quase zero
+            if (Math.abs(vY) < 0.1) {
                  vY = JUMP_FORCE;
             }
         }

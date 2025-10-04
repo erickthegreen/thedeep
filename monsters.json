@@ -49,7 +49,7 @@
     "sprite": "sprites/monster6.png",
     "health": 120,
     "gold": 60,
-    "speed": 0.01,
+    "speed": 0.05,
     "damage": 10,
     "name": "Cavaleiro Esquelético"
   },
@@ -58,7 +58,7 @@
     "sprite": "sprites/monster7.png",
     "health": 200,
     "gold": 100,
-    "speed": 0.01,
+    "speed": 0.09,
     "damage": 15,
     "name": "Kraken Jovem"
   },
@@ -67,7 +67,7 @@
     "sprite": "sprites/monster8.png",
     "health": 400,
     "gold": 250,
-    "speed": 0.01,
+    "speed": 0.08,
     "damage": 25,
     "name": "Leviatã Ancião"
   }
